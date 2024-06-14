@@ -6,7 +6,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{address, Address, U256};
 use alloy_rpc_types::Block;
 use revm::{
     db::CacheDB,
@@ -24,6 +24,13 @@ use crate::{
     TransactionsDependencies, TransactionsDependents, TransactionsStatus, TxIdx,
     TxIncarnationStatus, TxVersion, ValidationTask,
 };
+
+static ADDRESS_WETH: Address = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
+static A: [u8; 4] = [121, 26, 201, 71];
+static B: [u8; 4] = [127, 243, 106, 181];
+static C: [u8; 4] = [251, 59, 219, 65];
+static D: [u8; 4] = [182, 249, 222, 149];
+static E: [u8; 4] = [53, 152, 216, 171];
 
 /// Errors when executing a block with PEVM.
 #[derive(Debug, PartialEq)]
@@ -276,12 +283,37 @@ fn preprocess_dependencies(
     let mut last_tx_idx_by_address = AHashMap::<Address, TxIdx>::default();
 
     for (tx_idx, tx) in txs.iter().enumerate() {
-        // We check for a non-empty value that guarantees to update the balance of the
-        // recipient, to avoid smart contract interactions that only some storage.
         let mut recipient_with_changed_balance = None;
+
+        let mut wrote_weth_balance: bool = false;
+
         if let TransactTo::Call(to) = tx.transact_to {
+            // We check for a non-empty value that guarantees to update the balance of the
+            // recipient, to avoid smart contract interactions that only some storage.
             if tx.value != U256::ZERO {
                 recipient_with_changed_balance = Some(to);
+            } else if !tx.data.is_empty()
+                && (to == ADDRESS_WETH
+                    || (to == address!("7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
+                        && (tx.data.starts_with(&B)
+                            || tx.data.starts_with(&C)
+                            || tx.data.starts_with(&A)
+                            || tx.data.starts_with(&D)))
+                    || (to == address!("d9e1cE17f2641f24aE83637ab66a2cca9C378B9F")
+                        && (tx.data.starts_with(&D) || tx.data.starts_with(&A)))
+                    || (to == address!("2Ec705D306b51e486B1bC0D6ebEE708E0661ADd1")
+                        && (tx.data.starts_with(&A)))
+                    || (to == address!("Def1C0ded9bec7F1a1670819833240f027b25EfF")
+                        && (tx.data.starts_with(&E)))
+                    || (to == address!("0c17e776CD218252ADFca8D4e761D3fe757e9778")
+                        && tx.data.starts_with(&A)))
+            // || to == address!("3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD")
+            // || to == address!("0c17e776CD218252ADFca8D4e761D3fe757e9778")
+            // || to == address!("6131B5fae19EA4f9D964eAc0408E4408b66337b5")
+            // || to == address!("99a58482BD75cbab83b27EC03CA68fF489b5788f")
+            // || to == address!("E592427A0AEce92De3Edee1F18E0157C05861564"))
+            {
+                wrote_weth_balance = true;
             }
         }
 
@@ -326,6 +358,13 @@ fn preprocess_dependencies(
                     }
                 }
             }
+            if wrote_weth_balance {
+                if let Some(prev_idx) = last_tx_idx_by_address.get(&ADDRESS_WETH) {
+                    if !dependency_idxs.contains(prev_idx) {
+                        dependency_idxs.push(*prev_idx);
+                    }
+                }
+            }
             register_dependency(dependency_idxs);
         }
 
@@ -339,6 +378,9 @@ fn preprocess_dependencies(
         last_tx_idx_by_address.insert(tx.caller, tx_idx);
         if let Some(to) = recipient_with_changed_balance {
             last_tx_idx_by_address.insert(to, tx_idx);
+        }
+        if wrote_weth_balance {
+            last_tx_idx_by_address.insert(ADDRESS_WETH, tx_idx);
         }
     }
 
