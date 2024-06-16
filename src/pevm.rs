@@ -243,10 +243,12 @@ pub fn execute_revm_sequential<S: Storage>(
     Ok(results)
 }
 
+// TODO: Move to a dedicated preprocessing module.
+const ERC20_METHOD_ID: [u8; 4] = [169, 5, 156, 187];
+
 // Return `None` to signal falling back to sequential execution as we detected too many
 // dependencies. Otherwise return a tuned scheduler and the max concurrency level.
-// TODO: Clearer interface & make this as fast as possible.
-// For instance, to use an enum return type and `SmallVec` over `AHashSet`.
+// TODO: Move to a dedicated module with a clearer interface & make this as fast as possible.
 fn preprocess_dependencies(
     beneficiary_address: &Address,
     txs: &[TxEnv],
@@ -275,13 +277,23 @@ fn preprocess_dependencies(
     // reading from (1).
     let mut last_tx_idx_by_address = AHashMap::<Address, TxIdx>::default();
 
+    // Marking transactions interacting with an ERC-20 token (first address in the tuple)
+    // balance (second address)
+    let mut last_tx_idx_by_erc20 = AHashMap::<(Address, Address), TxIdx>::default();
+
     for (tx_idx, tx) in txs.iter().enumerate() {
-        // We check for a non-empty value that guarantees to update the balance of the
-        // recipient, to avoid smart contract interactions that only some storage.
         let mut recipient_with_changed_balance = None;
+        let mut erc20_transfer = None;
         if let TransactTo::Call(to) = tx.transact_to {
+            // We check for a non-empty value that guarantees to update the balance of the
+            // recipient, to avoid smart contract interactions that only some storage.
             if tx.value != U256::ZERO {
                 recipient_with_changed_balance = Some(to);
+            }
+            // TODO: Can we accept the collision risk on the method id, or do we need to add
+            // more checks, whitelist ERC20 addresses, etc.?
+            if tx.data.len() == 68 && tx.data.starts_with(&ERC20_METHOD_ID) {
+                erc20_transfer = Some((to, Address::from_slice(&tx.data.slice(16..36))));
             }
         }
 
@@ -312,20 +324,35 @@ fn preprocess_dependencies(
                 .cloned()
                 .unwrap_or(0);
             register_dependency((start_idx..tx_idx).collect());
-        }
-        // Otherwise, build dependencies across same senders & recipients
-        else {
+        } else {
             let mut dependency_idxs = Vec::new();
+
+            // Dependencies across same senders & recipients
             if let Some(prev_idx) = last_tx_idx_by_address.get(&tx.caller) {
                 dependency_idxs.push(*prev_idx);
             }
-            if let Some(to) = recipient_with_changed_balance {
-                if let Some(prev_idx) = last_tx_idx_by_address.get(&to) {
+            if let Some(to) = &recipient_with_changed_balance {
+                if let Some(prev_idx) = last_tx_idx_by_address.get(to) {
                     if !dependency_idxs.contains(prev_idx) {
                         dependency_idxs.push(*prev_idx);
                     }
                 }
             }
+
+            // Dependencies across ERC-20 transfers
+            if let Some(erc20_transfer) = &erc20_transfer {
+                if let Some(prev_idx) = last_tx_idx_by_erc20.get(&(erc20_transfer.0, tx.caller)) {
+                    if !dependency_idxs.contains(prev_idx) {
+                        dependency_idxs.push(*prev_idx);
+                    }
+                }
+                if let Some(prev_idx) = last_tx_idx_by_erc20.get(erc20_transfer) {
+                    if !dependency_idxs.contains(prev_idx) {
+                        dependency_idxs.push(*prev_idx);
+                    }
+                }
+            }
+
             register_dependency(dependency_idxs);
         }
 
@@ -339,6 +366,10 @@ fn preprocess_dependencies(
         last_tx_idx_by_address.insert(tx.caller, tx_idx);
         if let Some(to) = recipient_with_changed_balance {
             last_tx_idx_by_address.insert(to, tx_idx);
+        }
+        if let Some((token, recipient)) = erc20_transfer {
+            last_tx_idx_by_erc20.insert((token, tx.caller), tx_idx);
+            last_tx_idx_by_erc20.insert((token, recipient), tx_idx);
         }
     }
 
