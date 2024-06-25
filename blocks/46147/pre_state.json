@@ -1,1 +1,1 @@
-{"0xa1e4380a3b1f749673e270229993ee55f35663b4":{"info":{"balance":"0x6c6b935b8bbd400000","nonce":0,"code":{"LegacyRaw":"0x"}},"storage":{}},"0xe6a7a1d47ff21b6321162aea7c6cb457d5476bca":{"info":{"balance":"0xf3426785a8ab466000","nonce":0,"code":{"LegacyRaw":"0x"}},"storage":{}}}
+{"0xa1e4380a3b1f749673e270229993ee55f35663b4":{"basic":{"balance":"0x6c6b935b8bbd400000","nonce":0,"code":null,"code_hash":null},"storage":{}},"0xe6a7a1d47ff21b6321162aea7c6cb457d5476bca":{"basic":{"balance":"0xf3426785a8ab466000","nonce":0,"code":null,"code_hash":null},"storage":{}}}

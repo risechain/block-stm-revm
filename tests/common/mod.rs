@@ -7,14 +7,14 @@ use std::{
 use ahash::AHashMap;
 use alloy_primitives::{Address, Bloom, Bytes, B256, U256};
 use alloy_rpc_types::{Block, Header};
-use pevm::InMemoryStorage;
-use revm::{db::PlainAccount, primitives::KECCAK_EMPTY};
+use pevm::{EvmAccount, InMemoryStorage};
+use revm::primitives::{Bytecode, KECCAK_EMPTY};
 
 pub mod runner;
 pub use runner::{assert_execution_result, mock_account, test_execute_alloy, test_execute_revm};
 pub mod storage;
 
-pub type ChainState = AHashMap<Address, PlainAccount>;
+pub type ChainState = AHashMap<Address, EvmAccount>;
 pub type BlockHashes = AHashMap<U256, B256>;
 
 pub static MOCK_ALLOY_BLOCK_HEADER: Header = Header {
@@ -52,7 +52,7 @@ pub fn for_each_block_from_disk(mut handler: impl FnMut(Block, InMemoryStorage))
     for block_path in fs::read_dir("blocks").unwrap() {
         let block_path = block_path.unwrap().path();
         let block_number = block_path.file_name().unwrap().to_str().unwrap();
-
+        
         // Parse block
         let block: Block = serde_json::from_reader(BufReader::new(
             File::open(format!("blocks/{block_number}/block.json")).unwrap(),
@@ -60,7 +60,7 @@ pub fn for_each_block_from_disk(mut handler: impl FnMut(Block, InMemoryStorage))
         .unwrap();
 
         // Parse state
-        let mut accounts: HashMap<Address, PlainAccount> = serde_json::from_reader(BufReader::new(
+        let mut accounts: HashMap<Address, EvmAccount> = serde_json::from_reader(BufReader::new(
             File::open(format!("blocks/{block_number}/pre_state.json")).unwrap(),
         ))
         .unwrap();
@@ -77,11 +77,11 @@ pub fn for_each_block_from_disk(mut handler: impl FnMut(Block, InMemoryStorage))
                 .unwrap_or_default();
 
         for (_, account) in accounts.iter_mut() {
-            if let Some(code) = account.info.code.clone() {
-                let code_hash = code.hash_slow();
-                account.info.code_hash = code_hash;
+            if let Some(code) = account.basic.code.clone() {
+                let code_hash = Bytecode::from(code).hash_slow();
+                account.basic.code_hash = Some(code_hash);
             } else {
-                account.info.code_hash = KECCAK_EMPTY;
+                account.basic.code_hash = Some(KECCAK_EMPTY);
             }
         }
         handler(block, InMemoryStorage::new(accounts, block_hashes));

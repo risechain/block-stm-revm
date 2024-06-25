@@ -9,12 +9,13 @@ use revm::{
     primitives::{Account, AccountInfo, Bytecode, JumpTable},
     DatabaseRef,
 };
+use serde::{Deserialize, Serialize};
 
 /// An EVM account.
 // TODO: Flatten [AccountBasic] or more ideally, replace this with an Alloy type.
 // [AccountBasic] works for now as we're tightly tied to REVM types, hence
 // conversions between [AccountBasic] & [AccountInfo] are very convenient.
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvmAccount {
     /// The account's basic information.
     pub basic: AccountBasic,
@@ -44,9 +45,18 @@ impl From<Account> for EvmAccount {
     }
 }
 
+impl From<AccountBasic> for EvmAccount {
+    fn from(basic: AccountBasic) -> Self {
+        EvmAccount {
+            basic,
+            storage: AHashMap::default(),
+        }
+    }
+}
+
 /// Basic information of an account
 // TODO: Reuse something sane from Alloy?
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct AccountBasic {
     /// The balance of the account.
     pub balance: U256,
@@ -59,10 +69,28 @@ pub struct AccountBasic {
 }
 
 impl AccountBasic {
+    /// Create a new account with the given balance, nonce, code hash and code.
+    pub fn new(balance: U256, nonce: u64, code_hash: B256, code: EvmCode) -> Self {
+        AccountBasic {
+            balance,
+            nonce,
+            code: Some(code),
+            code_hash: Some(code_hash),
+        }
+    }
+
     /// Check if an account is empty for removal per EIP-161
     // https://github.com/ethereum/EIPs/blob/96523ef4d76ca440f73f0403ddb5c9cb3b24dcae/EIPS/eip-161.md
     pub fn is_empty(&self) -> bool {
         self.balance == U256::ZERO && self.nonce == 0 && self.code.is_none()
+    }
+
+    /// Create a new account with the given balance.
+    pub fn from_balance(balance: U256) -> Self {
+        AccountBasic {
+            balance,
+            ..Default::default()
+        }
     }
 }
 
@@ -99,7 +127,7 @@ impl From<AccountInfo> for AccountBasic {
 
 /// EVM Code, currently mapping to REVM's [ByteCode::LegacyAnalyzed].
 // TODO: Support raw legacy & EOF
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct EvmCode {
     /// Bytecode with 32 zero bytes padding
     bytecode: Bytes,

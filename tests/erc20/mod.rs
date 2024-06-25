@@ -2,10 +2,8 @@ pub mod contract;
 
 use ahash::AHashMap;
 use contract::ERC20Token;
-use revm::{
-    db::PlainAccount,
-    primitives::{uint, AccountInfo, Address, TransactTo, TxEnv, U256},
-};
+use pevm::{AccountBasic, EvmAccount};
+use revm::primitives::{uint, Address, TransactTo, TxEnv, U256};
 
 use crate::common::ChainState;
 
@@ -39,8 +37,8 @@ pub fn generate_cluster(
     let mut txs = Vec::new();
 
     for person in people_addresses.iter() {
-        let info = AccountInfo::from_balance(uint!(4_567_000_000_000_000_000_000_U256));
-        state.insert(*person, PlainAccount::from(info));
+        let basic = AccountBasic::from_balance(uint!(4_567_000_000_000_000_000_000_U256));
+        state.insert(*person, EvmAccount::from(basic));
     }
 
     for nonce in 0..num_transfers_per_person {

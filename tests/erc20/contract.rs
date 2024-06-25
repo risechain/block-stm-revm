@@ -1,11 +1,8 @@
 use crate::common::storage::{from_address, from_indices, from_short_string, StorageBuilder};
 use ahash::AHashMap;
-use revm::{
-    db::PlainAccount,
-    primitives::{
-        fixed_bytes, hex::FromHex, ruint::UintTryFrom, AccountInfo, Address, Bytecode, Bytes, B256,
-        U256,
-    },
+use pevm::{AccountBasic, EvmAccount};
+use revm::primitives::{
+    fixed_bytes, hex::FromHex, ruint::UintTryFrom, Address, Bytecode, Bytes, B256, U256,
 };
 
 const ERC20_TOKEN: &str = include_str!("./assets/ERC20Token.hex");
@@ -64,7 +61,7 @@ impl ERC20Token {
     // | _name        | string                                          | 3    | 0      | 32    |
     // | _symbol      | string                                          | 4    | 0      | 32    |
     // | _decimals    | uint8                                           | 5    | 0      | 1     |
-    pub fn build(&self) -> PlainAccount {
+    pub fn build(&self) -> EvmAccount {
         let hex = ERC20_TOKEN.trim();
         let bytecode = Bytecode::new_raw(Bytes::from_hex(hex).unwrap());
 
@@ -87,9 +84,14 @@ impl ERC20Token {
             );
         }
 
-        PlainAccount {
-            info: AccountInfo::new(U256::ZERO, 1u64, bytecode.hash_slow(), bytecode.clone()),
-            storage: store.build(),
+        EvmAccount {
+            basic: AccountBasic::new(
+                U256::ZERO,
+                1u64,
+                bytecode.hash_slow(),
+                bytecode.clone().into(),
+            ),
+            storage: store.build().into_iter().collect(),
         }
     }
 

@@ -13,11 +13,8 @@ pub mod uniswap;
 
 use crate::uniswap::generate_cluster;
 use ahash::AHashMap;
-use pevm::InMemoryStorage;
-use revm::{
-    db::PlainAccount,
-    primitives::{Address, TxEnv},
-};
+use pevm::{EvmAccount, InMemoryStorage};
+use revm::primitives::{Address, TxEnv};
 
 #[test]
 fn uniswap_clusters() {
@@ -25,7 +22,7 @@ fn uniswap_clusters() {
     const NUM_PEOPLE_PER_CLUSTER: usize = 20;
     const NUM_SWAPS_PER_PERSON: usize = 20;
 
-    let mut final_state = AHashMap::from([(Address::ZERO, PlainAccount::default())]); // Beneficiary
+    let mut final_state = AHashMap::from([(Address::ZERO, EvmAccount::default())]); // Beneficiary
     let mut final_txs = Vec::<TxEnv>::new();
     for _ in 0..NUM_CLUSTERS {
         let (state, txs) = generate_cluster(NUM_PEOPLE_PER_CLUSTER, NUM_SWAPS_PER_PERSON);

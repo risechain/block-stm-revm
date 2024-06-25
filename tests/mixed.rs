@@ -2,12 +2,10 @@
 
 use ahash::AHashMap;
 use alloy_primitives::U160;
-use pevm::InMemoryStorage;
+use pevm::{EvmAccount, InMemoryStorage};
 use rand::random;
-use revm::{
-    db::PlainAccount,
-    primitives::{env::TxEnv, Address, TransactTo, U256},
-};
+use revm::
+    primitives::{env::TxEnv, Address, TransactTo, U256};
 
 pub mod common;
 pub mod erc20;
@@ -20,7 +18,7 @@ fn mixed_block() {
     // TODO: Run a few times
     let mut block_size = 0;
     let mut final_state = AHashMap::new();
-    final_state.insert(Address::ZERO, PlainAccount::default()); // Beneficiary
+    final_state.insert(Address::ZERO, EvmAccount::default()); // Beneficiary
     let mut final_txs = Vec::new();
     // 1 to 10
     let small_random = || (random::<u8>() % 10 + 1) as usize;

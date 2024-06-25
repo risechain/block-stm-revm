@@ -10,11 +10,8 @@ use ahash::AHashMap;
 use alloy_chains::Chain;
 use alloy_primitives::{Address, U160, U256};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use pevm::{execute_revm, execute_revm_sequential, InMemoryStorage};
-use revm::{
-    db::PlainAccount,
-    primitives::{BlockEnv, SpecId, TransactTo, TxEnv},
-};
+use pevm::{execute_revm, execute_revm_sequential, EvmAccount, InMemoryStorage};
+use revm::primitives::{BlockEnv, SpecId, TransactTo, TxEnv};
 
 // Better project structure
 #[path = "../tests/common/mod.rs"]
@@ -89,13 +86,13 @@ pub fn bench_raw_transfers(c: &mut Criterion) {
 pub fn bench_erc20(c: &mut Criterion) {
     let block_size = (GIGA_GAS as f64 / erc20::GAS_LIMIT as f64).ceil() as usize;
     let (mut state, txs) = erc20::generate_cluster(block_size, 1, 1);
-    state.insert(Address::ZERO, PlainAccount::default()); // Beneficiary
+    state.insert(Address::ZERO, EvmAccount::default()); // Beneficiary
     bench(c, "Independent ERC20", state, txs);
 }
 
 pub fn bench_uniswap(c: &mut Criterion) {
     let block_size = (GIGA_GAS as f64 / uniswap::GAS_LIMIT as f64).ceil() as usize;
-    let mut final_state = AHashMap::from([(Address::ZERO, PlainAccount::default())]); // Beneficiary
+    let mut final_state = AHashMap::from([(Address::ZERO, EvmAccount::default())]); // Beneficiary
     let mut final_txs = Vec::<TxEnv>::new();
     for _ in 0..block_size {
         let (state, txs) = uniswap::generate_cluster(1, 1);

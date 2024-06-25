@@ -3,10 +3,8 @@ pub mod contract;
 use crate::{common::ChainState, erc20::contract::ERC20Token};
 use ahash::AHashMap;
 use contract::{SingleSwap, SwapRouter, UniswapV3Factory, UniswapV3Pool, WETH9};
-use revm::{
-    db::PlainAccount,
-    primitives::{fixed_bytes, uint, AccountInfo, Address, Bytes, TransactTo, TxEnv, B256, U256},
-};
+use pevm::{AccountBasic, EvmAccount};
+use revm::primitives::{fixed_bytes, uint, Address, Bytes, TransactTo, TxEnv, B256, U256};
 
 pub const GAS_LIMIT: u64 = 155_934;
 
@@ -113,8 +111,8 @@ pub fn generate_cluster(
     ]);
 
     for person in people_addresses.iter() {
-        let info = AccountInfo::from_balance(uint!(4_567_000_000_000_000_000_000_U256));
-        state.insert(*person, PlainAccount::from(info));
+        let basic = AccountBasic::from_balance(uint!(4_567_000_000_000_000_000_000_U256));
+        state.insert(*person, EvmAccount::from(basic));
     }
 
     let mut txs = Vec::new();

@@ -7,7 +7,7 @@ edition = "2021"
 # Put this behind a feature flag if there are use cases & users
 # that need more security guarantees even for internally hashing
 # EVM memory locations (we do not persist these hashes).
-ahash = "0.8.11"
+ahash = { version = "0.8.11", features = ["serde"] }
 alloy-chains = { version = "0.1.22" }
 alloy-primitives = { version = "0.7.5", features = ["asm-keccak"] }
 alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy", rev = "a4bb5f0be3eec5c8679bdab93c1482df38ba8509" }
@@ -15,6 +15,7 @@ bitvec = "1.0.1"
 crossbeam = "0.8.4"
 dashmap = "6.0.0"
 defer-drop = "1.3.0"
+serde = "1.0.203"
 
 # Let's do our best to port needed REVM changes upstream
 revm = { git = "https://github.com/risechain/revm", rev = "979d069f0c2798f416c57f82ca1ebef46d257c4e", features = [

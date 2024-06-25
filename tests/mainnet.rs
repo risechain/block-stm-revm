@@ -9,10 +9,11 @@ use std::{
 use alloy_chains::Chain;
 use alloy_primitives::{Address, B256, U256};
 use alloy_provider::{Provider, ProviderBuilder};
+
 use alloy_rpc_types::{BlockId, BlockTransactionsKind};
-use pevm::RpcStorage;
+use pevm::{EvmAccount, RpcStorage};
 use reqwest::Url;
-use revm::db::{CacheDB, PlainAccount};
+use revm::db::CacheDB;
 use tokio::runtime::Runtime;
 
 pub mod common;
@@ -64,8 +65,7 @@ fn mainnet_blocks_from_rpc() {
             serde_json::to_writer(file_block, &block).unwrap();
 
             // TODO: Snapshot with consistent ordering for ease of diffing.
-            // Currently PlainAccount's storage ordering isn't consistent.
-            let accounts: BTreeMap<Address, PlainAccount> =
+            let accounts: BTreeMap<Address, EvmAccount> =
                 rpc_storage.get_cache_accounts().into_iter().collect();
             let file_state = File::create(format!("{dir}/pre_state.json")).unwrap();
             serde_json::to_writer(file_state, &accounts).unwrap();
