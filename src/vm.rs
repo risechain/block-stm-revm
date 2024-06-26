@@ -178,11 +178,12 @@ impl<'a, S: Storage> Database for VmDb<'a, S> {
             }));
         }
 
-        if &address != self.from && Some(&address) != self.to {
+        let location_hash = self.get_address_hash(&address);
+
+        if location_hash != self.from_hash && Some(location_hash) != self.to_hash {
             self.only_read_from_and_to = false;
         }
 
-        let location_hash = self.get_address_hash(&address);
         let read_origins = self.read_set.locations.entry(location_hash).or_default();
         // For some reasons REVM may call to the same location several time!
         // We can return caches here but early benchmarks show it's not worth
@@ -460,7 +461,7 @@ impl<'a, S: Storage> Vm<'a, S> {
                             // Skip transactions with the same from & to until we have lazy updates
                             // for the sender nonce & balance.
                             if is_maybe_lazy
-                                && Some(address) == to
+                                && Some(account_location_hash) == to_hash
                                 && account.info.is_empty_code_hash()
                             {
                                 write_set.push((
