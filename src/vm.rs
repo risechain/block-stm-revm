@@ -1,11 +1,13 @@
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use ahash::AHashMap;
 use alloy_chains::Chain;
 use alloy_rpc_types::Receipt;
 use defer_drop::DeferDrop;
 use revm::{
     primitives::{
-        AccountInfo, Address, BlockEnv, Bytecode, CfgEnv, EVMError, Env, InvalidTransaction,
-        ResultAndState, SpecId, TransactTo, TxEnv, B256, U256,
+        AccountInfo, Address, BlockEnv, Bytecode, CfgEnv, EVMError, Env, ExecutionResult,
+        InvalidTransaction, ResultAndState, SpecId, TransactTo, TxEnv, B256, U256,
     },
     Context, Database, Evm, EvmContext, Handler,
 };
@@ -367,6 +369,11 @@ pub(crate) struct Vm<'a, S: Storage> {
     // the [TxEnv] into them here, to avoid heavy re-initialization when
     // re-executing a transaction.
     txs: DeferDrop<Vec<TxEnv>>,
+    // There are fatal errors that we should retry on like lacking funds
+    // to pay fees (a previous transaction funding the account via internal
+    // tx hasn't completed, etc.), reverting before registering the full
+    // read set for correct validaiton, etc.
+    retried_tx: Vec<AtomicU8>,
 }
 
 impl<'a, S: Storage> Vm<'a, S> {
@@ -388,6 +395,8 @@ impl<'a, S: Storage> Vm<'a, S> {
             beneficiary_location_hash: hasher.hash_one(MemoryLocation::Basic(block_env.coinbase)),
             block_env,
             reward_policy: RewardPolicy::Ethereum, // TODO: Derive from [chain]
+            // We subtract one as we don't ever retry the first transaction
+            retried_tx: (0..txs.len() - 1).map(|_| AtomicU8::new(0)).collect(),
             txs: DeferDrop::new(txs),
         }
     }
@@ -418,7 +427,7 @@ impl<'a, S: Storage> Vm<'a, S> {
     // execution).
     pub(crate) fn execute(&self, tx_idx: TxIdx) -> VmExecutionResult {
         // SATEFY: A correct scheduler would guarantee this index to be inbound.
-        let tx = unsafe { self.txs.get_unchecked(tx_idx) };
+        let tx = index!(self.txs, tx_idx);
         let from = &tx.caller;
         let from_hash = self.get_address_hash(from);
         let (is_create_tx, to, to_hash) = match &tx.transact_to {
@@ -441,6 +450,21 @@ impl<'a, S: Storage> Vm<'a, S> {
             false,
         ) {
             Ok(result_and_state) => {
+                // We unfortunately must retry at least once on reverted transactions since it
+                // may have reverted prematurely before registering the full read set that
+                // would invalidate and retry incorrectly when a potential lower fulfilling
+                // transactions completed.
+                if matches!(result_and_state.result, ExecutionResult::Revert { .. })
+                    && tx_idx > 0
+                    // We subtract one as we don't ever retry the first transaction
+                    // TODO: Test this aggressively to find an appropriate number of retries.
+                    && index!(self.retried_tx, tx_idx - 1).fetch_add(1, Ordering::Relaxed) < 1
+                {
+                    return VmExecutionResult::ReadError {
+                        blocking_tx_idx: tx_idx - 1,
+                    };
+                }
+
                 // There are at least three locations most of the time: the sender,
                 // the recipient, and the beneficiary accounts.
                 // TODO: Allocate up to [result_and_state.state.len()] anyway?
@@ -539,15 +563,14 @@ impl<'a, S: Storage> Vm<'a, S> {
             Err(err) => {
                 // Optimistically retry in case some previous internal transactions send
                 // more fund to the sender but hasn't been executed yet.
-                // TODO: Let users define this behaviour through a mode enum or something.
-                // Since this retry is safe for syncing canonical blocks but can deadlock
-                // on new or faulty blocks. We can skip the transaction for new blocks and
-                // error out after a number of tries for the latter.
-                if tx_idx > 0
-                    && matches!(
-                        err,
-                        EVMError::Transaction(InvalidTransaction::LackOfFundForMaxFee { .. })
-                    )
+                if matches!(
+                    err,
+                    EVMError::Transaction(InvalidTransaction::LackOfFundForMaxFee { .. })
+                )
+                    && tx_idx > 0
+                    // We subtract one as we don't ever retry the first transaction
+                    // TODO: Test this aggressively to find an appropriate number of retries.
+                    && index!(self.retried_tx, tx_idx - 1).fetch_add(1, Ordering::Relaxed) < 1
                 {
                     VmExecutionResult::ReadError {
                         blocking_tx_idx: tx_idx - 1,

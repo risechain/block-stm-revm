@@ -196,13 +196,19 @@ enum Task {
 
 // This optimization is desired as we constantly index into many
 // vectors of the block-size size. It can yield up to 5% improvement.
-macro_rules! index_mutex {
+macro_rules! index {
     ($vec:expr, $index:expr) => {
         // SAFETY: A correct scheduler would not leak indexes larger
         // than the block size, which is the size of all vectors we
         // index via this macro. Otherwise, DO NOT USE!
+        unsafe { $vec.get_unchecked($index) }
+    };
+}
+
+macro_rules! index_mutex {
+    ($vec:expr, $index:expr) => {
         // TODO: Better error handling for the mutex.
-        unsafe { $vec.get_unchecked($index).lock().unwrap() }
+        index!($vec, $index).lock().unwrap()
     };
 }
 
