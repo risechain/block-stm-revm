@@ -179,11 +179,12 @@ impl<'a, S: Storage> Database for VmDb<'a, S> {
             }));
         }
 
-        if &address != self.from && Some(&address) != self.to {
+        let location_hash = self.get_address_hash(&address);
+
+        if location_hash != self.from_hash && Some(location_hash) != self.to_hash {
             self.only_read_from_and_to = false;
         }
 
-        let location_hash = self.get_address_hash(&address);
         let read_origins = self.read_set.locations.entry(location_hash).or_default();
         let has_prev_origins = !read_origins.is_empty();
         // We accumulate new origins to either:
@@ -501,7 +502,7 @@ impl<'a, S: Storage> Vm<'a, S> {
                             // Skip transactions with the same from & to until we have lazy updates
                             // for the sender nonce & balance.
                             if is_maybe_lazy
-                                && Some(address) == to
+                                && Some(account_location_hash) == to_hash
                                 && account.info.is_empty_code_hash()
                             {
                                 write_set.push((
