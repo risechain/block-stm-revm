@@ -1,6 +1,5 @@
 use std::{
     cmp::min,
-    collections::HashMap,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Mutex,
@@ -10,8 +9,8 @@ use std::{
 use crossbeam::utils::CachePadded;
 
 use crate::{
-    BuildIdentityHasher, IncarnationStatus, Task, TransactionsDependenciesNum,
-    TransactionsDependents, TransactionsStatus, TxIdx, TxStatus, TxVersion,
+    IncarnationStatus, Task, TransactionsDependenciesNum, TransactionsDependents,
+    TransactionsStatus, TxIdx, TxStatus, TxVersion,
 };
 
 // The Pevm collaborative scheduler coordinates execution & validation
@@ -73,10 +72,8 @@ pub(crate) struct Scheduler {
     // key transaction is re-executed.
     transactions_dependents: Vec<Mutex<Vec<TxIdx>>>,
     // An optional number of tx dependencies flagged during preprocessing.
-    // TODO: Turn this into a [Vec] to track the number of dependencies for
-    // each transaction live. Then we can make [add_dependency] take in a
-    // list instead of just the first estimated one.
-    transactions_dependencies_num: HashMap<TxIdx, AtomicUsize, BuildIdentityHasher>,
+    // TODO: we can make [add_dependency] take in a list instead of just the first estimated one.
+    transactions_dependencies_num: Vec<AtomicUsize>,
 }
 
 impl Scheduler {
@@ -99,7 +96,7 @@ impl Scheduler {
                 .collect(),
             transactions_dependencies_num: transactions_dependencies
                 .into_iter()
-                .map(|(tx_idx, deps_num)| (tx_idx, AtomicUsize::new(deps_num)))
+                .map(AtomicUsize::new)
                 .collect(),
             // We won't validate until we find the first transaction that
             // reads or writes outside of its preprocessed dependencies.
@@ -193,9 +190,7 @@ impl Scheduler {
             blocking_dependents.push(tx_idx);
             drop(blocking_dependents);
 
-            if let Some(deps_num) = self.transactions_dependencies_num.get(&tx_idx) {
-                deps_num.fetch_add(1, Ordering::Release);
-            }
+            self.transactions_dependencies_num[tx_idx].fetch_add(1, Ordering::Release);
 
             return true;
         }
@@ -229,12 +224,10 @@ impl Scheduler {
             let mut dependents = index_mutex!(self.transactions_dependents, tx_version.tx_idx);
             let mut min_dependent_idx = None;
             for tx_idx in dependents.iter() {
-                if let Some(deps_num) = self.transactions_dependencies_num.get(tx_idx) {
-                    // Skip this dependent as it has other pending dependencies.
-                    // Let the last one evoke it.
-                    if deps_num.fetch_sub(1, Ordering::Release) > 1 {
-                        continue;
-                    }
+                // Skip this dependent as it has other pending dependencies.
+                // Let the last one evoke it.
+                if self.transactions_dependencies_num[*tx_idx].fetch_sub(1, Ordering::Release) > 1 {
+                    continue;
                 }
                 self.set_ready_status(*tx_idx);
                 min_dependent_idx = match min_dependent_idx {

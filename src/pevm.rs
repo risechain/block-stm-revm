@@ -23,8 +23,8 @@ use crate::{
     storage::StorageWrapper,
     vm::{execute_tx, ExecutionError, PevmTxExecutionResult, Vm, VmExecutionResult},
     AccountBasic, BuildAddressHasher, BuildIdentityHasher, EvmAccount, IncarnationStatus,
-    MemoryEntry, MemoryLocation, MemoryValue, Storage, Task, TransactionsDependenciesNum,
-    TransactionsDependents, TransactionsStatus, TxIdx, TxStatus, TxVersion,
+    MemoryEntry, MemoryLocation, MemoryValue, Storage, Task, TransactionsDependents,
+    TransactionsStatus, TxIdx, TxStatus, TxVersion,
 };
 
 /// Errors when executing a block with PEVM.
@@ -345,14 +345,14 @@ fn preprocess_dependencies(
         })
         .collect();
     let mut transactions_dependents: TransactionsDependents = vec![vec![]; block_size];
-    let mut transactions_dependencies =
-        TransactionsDependenciesNum::with_hasher(BuildIdentityHasher::default());
+    let mut transactions_dependencies_num = vec![0; block_size];
 
     // Marking transactions from a sender as dependent of the closest transaction that
     // shares the same sender and the closest that sends to this sender to avoid fatal
     // nonce & balance too low errors.
     let mut last_tx_idx_by_sender = HashMap::<Address, TxIdx, BuildAddressHasher>::default();
     let mut last_tx_idx_by_recipient = HashMap::<Address, TxIdx, BuildAddressHasher>::default();
+    let mut have_dependencies_tx_num = 0;
 
     for (tx_idx, tx) in txs.iter().enumerate() {
         let mut register_dependency = |dependency_idxs: Vec<usize>| {
@@ -360,7 +360,8 @@ fn preprocess_dependencies(
             // size in this scope.
             unsafe {
                 transactions_status.get_unchecked_mut(tx_idx).status = IncarnationStatus::Aborting;
-                transactions_dependencies.insert(tx_idx, dependency_idxs.len());
+                transactions_dependencies_num.insert(tx_idx, dependency_idxs.len());
+                have_dependencies_tx_num += 1;
                 for dependency_idx in dependency_idxs {
                     transactions_dependents
                         .get_unchecked_mut(dependency_idx)
@@ -398,7 +399,7 @@ fn preprocess_dependencies(
         }
 
         // TODO: Continue to fine tune this ratio.
-        if transactions_dependencies.len() as f64 / block_size as f64 > 0.85 {
+        if have_dependencies_tx_num as f64 / block_size as f64 > 0.85 {
             return None;
         }
 
@@ -415,7 +416,7 @@ fn preprocess_dependencies(
         // Diving the number of ready transactions by 2 means a thread must
         // complete ~4 tasks to justify its overheads.
         // TODO: Further fine tune given the dependency data above.
-        NonZeroUsize::new((block_size - transactions_dependencies.len()) / 2)
+        NonZeroUsize::new((block_size - have_dependencies_tx_num) / 2)
             .unwrap_or(min_concurrency_level)
             .max(min_concurrency_level);
 
@@ -424,7 +425,7 @@ fn preprocess_dependencies(
             block_size,
             transactions_status,
             transactions_dependents,
-            transactions_dependencies,
+            transactions_dependencies_num,
         )),
         max_concurrency_level,
     ))

@@ -128,7 +128,7 @@ struct TxStatus {
 type TransactionsStatus = Vec<TxStatus>;
 // TODO: Consider using [SmallVec] for these `[DepsList]`
 type TransactionsDependents = Vec<Vec<TxIdx>>;
-type TransactionsDependenciesNum = HashMap<TxIdx, usize, BuildIdentityHasher>;
+type TransactionsDependenciesNum = Vec<usize>;
 
 // We maintain an in-memory multi-version data structure that stores for
 // each memory location the latest value written per transaction, along
