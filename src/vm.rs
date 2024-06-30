@@ -261,52 +261,53 @@ impl<'a, S: Storage> Database for VmDb<'a, S> {
             }
         }
 
-        // Fall back to storage
-        if final_account.is_none() {
-            // Populate [Storage] on the first read
-            if !has_prev_origins {
-                new_origins.push(ReadOrigin::Storage);
-            }
-            // Inconsistent: previous origin is longer or didn't read
-            // from storage for the last origin.
-            else if read_origins.len() != new_origins.len() + 1
-                || read_origins.last() != Some(&ReadOrigin::Storage)
-            {
-                return Err(ReadError::InconsistentRead);
-            }
-            final_account = match self.vm.storage.basic(&address) {
-                Ok(Some(account)) => {
-                    let mut info = AccountInfo::from(account);
-                    info.balance += balance_addition;
-                    Some(info)
+        match &final_account {
+            None => {
+                // Fall back to storage
+                // Populate [Storage] on the first read
+                if !has_prev_origins {
+                    new_origins.push(ReadOrigin::Storage);
                 }
-                Ok(None) => {
-                    if balance_addition > U256::ZERO {
-                        Some(AccountInfo::from_balance(balance_addition))
-                    } else {
-                        None
+                // Inconsistent: previous origin is longer or didn't read
+                // from storage for the last origin.
+                else if read_origins.len() != new_origins.len() + 1
+                    || read_origins.last() != Some(&ReadOrigin::Storage)
+                {
+                    return Err(ReadError::InconsistentRead);
+                }
+                final_account = match self.vm.storage.basic(&address) {
+                    Ok(Some(account)) => {
+                        let mut info = AccountInfo::from(account);
+                        info.balance += balance_addition;
+                        Some(info)
                     }
-                }
-                Err(err) => return Err(ReadError::StorageError(format!("{err:?}"))),
-            };
+                    Ok(None) => {
+                        if balance_addition > U256::ZERO {
+                            Some(AccountInfo::from_balance(balance_addition))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(err) => return Err(ReadError::StorageError(format!("{err:?}"))),
+                };
+            }
+            Some(account) => {
+                // Register read accounts to check if they have changed (been written to)
+                self.read_set.accounts.insert(
+                    location_hash,
+                    AccountInfo {
+                        // Avoid cloning the code as we can compare its hash
+                        code: None,
+                        ..*account
+                    },
+                );
+            }
         }
 
         // Populate read origins on the first read.
-        // Otherwise [read_origins] matches [new_origins] already.
+        // Otherwise, [read_origins] matches [new_origins] already.
         if !has_prev_origins {
             *read_origins = new_origins;
-        }
-
-        // Register read accounts to check if they have changed (been written to)
-        if let Some(account) = &final_account {
-            self.read_set.accounts.insert(
-                location_hash,
-                AccountInfo {
-                    // Avoid cloning the code as we can compare its hash
-                    code: None,
-                    ..*account
-                },
-            );
         }
 
         Ok(final_account)
