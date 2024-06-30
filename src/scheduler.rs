@@ -159,9 +159,7 @@ impl Scheduler {
                 if let Some(tx_version) = self.try_validate() {
                     return Some(Task::Validation(tx_version));
                 }
-            } else if let Some(tx_version) =
-                self.try_execute(self.execution_idx.fetch_add(1, Ordering::Release))
-            {
+            } else if let Some(tx_version) = self.try_execute(execution_idx) {
                 return Some(Task::Execution(tx_version));
             }
         }
