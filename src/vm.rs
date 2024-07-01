@@ -189,7 +189,7 @@ impl<'a, S: Storage> Database for VmDb<'a, S> {
         let mut final_account = None;
         let mut balance_addition = U256::ZERO;
 
-        // Try reading from multi-verion data
+        // Try reading from multi-version data
         if self.tx_idx > &0 {
             // We enforce consecutive indexes for locations that all transactions write to like
             // the beneficiary balance. The goal is to not wastefully evaluate when we know
@@ -204,17 +204,17 @@ impl<'a, S: Storage> Database for VmDb<'a, S> {
                 let mut iter = written_transactions.range(..current_idx);
 
                 // Fully evaluate lazy updates
-                loop {
-                    match iter.next_back() {
-                        Some((blocking_idx, MemoryEntry::Estimate)) => {
+                while let Some((blocking_idx, entry)) = iter.next_back() {
+                    match entry {
+                        MemoryEntry::Estimate => {
                             return if need_consecutive_idxs {
                                 reschedule
                             } else {
                                 Err(ReadError::BlockingIndex(*blocking_idx))
                             }
                         }
-                        Some((closest_idx, MemoryEntry::Data(tx_incarnation, value))) => {
-                            if need_consecutive_idxs && closest_idx != &(current_idx - 1) {
+                        MemoryEntry::Data(tx_incarnation, value) => {
+                            if need_consecutive_idxs && blocking_idx != &(current_idx - 1) {
                                 return reschedule;
                             }
                             // About to push a new origin
@@ -223,7 +223,7 @@ impl<'a, S: Storage> Database for VmDb<'a, S> {
                                 return Err(ReadError::InconsistentRead);
                             }
                             let origin = ReadOrigin::MvMemory(TxVersion {
-                                tx_idx: *closest_idx,
+                                tx_idx: *blocking_idx,
                                 tx_incarnation: *tx_incarnation,
                             });
                             // Inconsistent: new origin is different from the previous!
@@ -243,7 +243,7 @@ impl<'a, S: Storage> Database for VmDb<'a, S> {
                                 }
                                 MemoryValue::LazyBalanceAddition(addition) => {
                                     balance_addition += addition;
-                                    current_idx = closest_idx;
+                                    current_idx = blocking_idx;
                                 }
                                 _ => return Err(ReadError::InvalidMemoryLocationType),
                             }
@@ -338,7 +338,7 @@ impl<'a, S: Storage> Database for VmDb<'a, S> {
         let read_origins = self.read_set.locations.entry(location_hash).or_default();
         let prev_origin = read_origins.last();
 
-        // Try reading from multi-verion data
+        // Try reading from multi-version data
         if self.tx_idx > &0 {
             if let Some(written_transactions) = self.vm.mv_memory.read_location(&location_hash) {
                 if let Some((closest_idx, entry)) =
